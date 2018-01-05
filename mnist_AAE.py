@@ -70,7 +70,7 @@ data, data_labels = shuffle_imgs()
 #---------------------------------------------------------------------------  
 #---------------------------------------------------------------------------  
 #Globals 
-epochs = 1000
+epochs = 100
 num_samples = 100
 eps = 1e-2
 rlr = 0.0001
@@ -82,6 +82,7 @@ tests = 10000
 # Plot
 class Plotter(object):  
     def __init__(self):   
+        self.t = 0
         self.n = int(np.sqrt(num_samples))
 
         self.fig = plt.figure(figsize=(12,8))
@@ -95,7 +96,9 @@ class Plotter(object):
         self.losses_lines.append(line)
         self.labels = ["reconstruction"]  
         self.losses_ax.legend(self.losses_lines, self.labels)  
-                
+        self.losses_ax.set_xlim([0, epochs]) 
+        self.losses_ax.set_ylim([0.1, 0.4])
+                   
         self.hidden_ax = self.fig.add_subplot(gs[l:,:(self.n)])
         self.hidden_ax.set_title("Hidden layer activation")
         self.hidden_scatter = self.hidden_ax.scatter(0,0, lw=0, s=5)
@@ -119,8 +122,6 @@ class Plotter(object):
         losses = [R_loss]   
         t = len(R_loss)
         self.losses_lines[0].set_data(np.arange(t), R_loss)
-        self.losses_ax.set_xlim([0,t])  
-        self.losses_ax.set_ylim([np.min(losses), np.max(losses)])  
             
         self.hidden_scatter.set_offsets(hidden)   
         self.hidden_scatter.set_facecolor(plt.cm.hsv(labels/10.0))    
@@ -133,7 +134,8 @@ class Plotter(object):
                 if k<l:
                     im.set_data(patterns[k].reshape(img_side, img_side))
         self.fig.canvas.draw()
-        self.fig.savefig("aae.png")
+        self.fig.savefig("aae-{:03d}.png".format(self.t))
+        self.t += 1
                  
 plotter = Plotter()
 #-------------------------------------------------------------------------------
