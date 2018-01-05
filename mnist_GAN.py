@@ -58,7 +58,7 @@ np.random.shuffle(data)
 #-------------------------------------------------------------------------------
 #-------------------------------------------------------------------------------
 #Globals
-epochs = 1000
+epochs = 100
 num_samples = 100
 eps = 1e-2
 lr = 0.0002
@@ -69,6 +69,7 @@ lr = 0.0002
 class Plotter(object):  
     def __init__(self):
         
+        self.t = 0
         self.fig = plt.figure(figsize=(10,6))
         gs = gridspec.GridSpec(5, 10)
 
@@ -78,6 +79,8 @@ class Plotter(object):
         self.cg_line, = self.changes_ax.plot(0,0)
         self.changes_ax.legend([self.cd_line, self.cg_line], 
                               ["discriminator", "generator"])  
+        self.changes_ax.set_xlim([0, epochs]) 
+        self.changes_ax.set_ylim([0, 1.25])
           
         self.losses_ax = self.fig.add_subplot(gs[2:4, :5])
         self.losses_ax.set_title("Losses")
@@ -86,6 +89,8 @@ class Plotter(object):
         self.losses_ax.legend([self.ld_line, self.lg_line], 
                 ["discriminator: log(D(x)) + log(1 - D(G(z)))", 
                     "generator: log(D(G(z)))"])  
+        self.losses_ax.set_xlim([0, epochs]) 
+        self.losses_ax.set_ylim([0, 3.5])
           
         self.pattern_axes = []
         self.pattern_imgs = []
@@ -106,16 +111,10 @@ class Plotter(object):
         self.ld_line.set_data(t, D_losses)
         self.lg_line.set_data(t, G_losses)
         losses = np.hstack((G_losses, D_losses))
-        self.losses_ax.set_xlim([0, len(t)]) 
-        self.losses_ax.set_ylim(
-            [np.minimum(0, losses.min())-0.2, losses.max()+0.2])
         
         self.cd_line.set_data(t, D_changes)
         self.cg_line.set_data(t, G_changes)
         changes = np.hstack((G_changes, D_changes))
-        self.changes_ax.set_xlim([0, len(t)]) 
-        self.changes_ax.set_ylim(
-            [np.minimum(0, changes.min())-0.2, changes.max()+0.2])
                                     
         l = len(patterns)
         for x in range(5):
@@ -126,7 +125,8 @@ class Plotter(object):
                     im.set_data(patterns[k].reshape(img_side, img_side))
         plt.tight_layout(pad=0.1)
         self.fig.canvas.draw()
-        self.fig.savefig("gan.png")
+        self.fig.savefig("gan-{:03d}.png".format(self.t))
+        self.t += 1
                  
 plotter = Plotter()
 #-------------------------------------------------------------------------------   
