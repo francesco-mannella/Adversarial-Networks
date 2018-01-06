@@ -61,7 +61,7 @@ np.random.shuffle(data)
 epochs = 100
 num_samples = 100
 eps = 1e-2
-lr = 0.0002
+lr = 0.0001
 #-------------------------------------------------------------------------------
 #-------------------------------------------------------------------------------
 #-------------------------------------------------------------------------------
@@ -80,7 +80,7 @@ class Plotter(object):
         self.changes_ax.legend([self.cd_line, self.cg_line], 
                               ["discriminator", "generator"])  
         self.changes_ax.set_xlim([0, epochs]) 
-        self.changes_ax.set_ylim([0, 1.25])
+        self.changes_ax.set_ylim([0, 1.35])
           
         self.losses_ax = self.fig.add_subplot(gs[2:4, :5])
         self.losses_ax.set_title("Losses")
@@ -90,7 +90,9 @@ class Plotter(object):
                 ["discriminator: log(D(x)) + log(1 - D(G(z)))", 
                     "generator: log(D(G(z)))"])  
         self.losses_ax.set_xlim([0, epochs]) 
-        self.losses_ax.set_ylim([0, 3.5])
+        self.losses_ax.set_ylim([0, 4])
+        self.losses_ax.set_yticks(np.arange(4))
+        self.losses_ax.set_yticklabels(-np.arange(4))
           
         self.pattern_axes = []
         self.pattern_imgs = []
@@ -125,6 +127,7 @@ class Plotter(object):
                     im.set_data(patterns[k].reshape(img_side, img_side))
         plt.tight_layout(pad=0.1)
         self.fig.canvas.draw()
+        self.fig.savefig("gan-last.png")
         self.fig.savefig("gan-{:03d}.png".format(self.t))
         self.t += 1
                  
