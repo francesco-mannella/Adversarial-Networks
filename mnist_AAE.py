@@ -216,7 +216,7 @@ test_labels = data_labels[:tests]
 graph = tf.Graph()
 with graph.as_default():
 #-------------------------------------------------------------------------------
-    drop_out = tf.placeholder(tf.float32, 1)
+    drop_out = tf.placeholder(tf.float32, ())
     #  Encoder
     with tf.variable_scope('Encoder'):
         encoder_layers = [n_mnist_pixels, 512, 256, 2]
@@ -277,27 +277,33 @@ with graph.as_default():
                 curr_data_sample, curr_data_labels = get_data_sample(t)
                 current_decoded_patterns, r_loss, _, _= session.run(
                     [decoded_patterns, R_loss, ER_train, DR_train], 
-                    feed_dict={data_sample:curr_data_sample})  
+                    feed_dict={data_sample:curr_data_sample, 
+                               drop_out: 0.3})  
                 
                 # adversarial step -- prior -> adversarial (minimize discrimination error)
                 curr_prior_sample = get_prior_sample()
                 d_loss, _ = session.run([D_loss, D_train], 
                     feed_dict={data_sample:curr_data_sample, 
-                               prior_sample:curr_prior_sample})               
+                               prior_sample:curr_prior_sample, 
+                               drop_out: 0.3})               
                 
                 # adversarial step -- hidden -> adversarial (minimize discrimination error)
                 curr_prior_sample = get_prior_sample()
                 g_loss, _ = session.run([G_loss, G_train], 
-                    feed_dict={data_sample:curr_data_sample})                
+                    feed_dict={data_sample:curr_data_sample, 
+                               drop_out: 0.3})                
                 
                 r_losses.append(r_loss)
                 
             R_losses.append(np.mean(r_losses))
             
             curr_patterns = session.run(generated_patterns, 
-                feed_dict={prior_sample:grid})
+                feed_dict={prior_sample:grid, 
+                           drop_out: 1.0})
             curr_hidden_patterns = session.run(test_hidden_patterns, 
-                feed_dict={data_test:test_data})
+                feed_dict={data_test:test_data, 
+                           drop_out: 1.0})
+            
             plotter.plot(R_losses, curr_hidden_patterns, test_labels, curr_patterns)
                 
         raw_input()
