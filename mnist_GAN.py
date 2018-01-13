@@ -29,7 +29,7 @@ config.gpu_options.allow_growth = True
 #-------------------------------------------------------------------------------
 # set the seed for random numbers generation
 import os
-current_seed = np.fromstring(os.urandom(4), dtype=np.uint32)[0]
+current_seed = np.frombuffer(os.urandom(4), dtype=np.uint32)[0]
 #current_seed = 1414826039
 print "seed:%d" % current_seed
 rng = np.random.RandomState(current_seed) 
@@ -60,10 +60,11 @@ np.random.shuffle(data)
 #-------------------------------------------------------------------------------
 #-------------------------------------------------------------------------------
 #Globals
-epochs = 200
-num_samples = 100
-eps = 1e-250
+epochs = 300
+num_samples = 50
+eps = 1e-20
 lr = 0.0002
+dropout = 0.6
 #-------------------------------------------------------------------------------
 #-------------------------------------------------------------------------------
 #-------------------------------------------------------------------------------
@@ -93,8 +94,6 @@ class Plotter(object):
                     "generator: log(D(G(z)))"])  
         self.losses_ax.set_xlim([0, epochs]) 
         self.losses_ax.set_ylim([0, -6])
-        #self.losses_ax.set_yticks(np.arange(4))
-        #self.losses_ax.set_yticklabels(-np.arange(4))
           
         self.pattern_axes = []
         self.pattern_imgs = []
@@ -142,24 +141,24 @@ with graph.as_default():
     with tf.variable_scope('Generator'):
         generator_layers = [100, 256, 512, 1024, n_mnist_pixels]
         generator_outfuns =[tf.nn.relu, tf.nn.relu, tf.nn.relu, tf.nn.tanh] 
-        generator = MLP(lr=lr, scope="G", drop_out=0.0,
+        generator = MLP(lr=lr, scope="G", drop_out=1.0,
                              outfuns=generator_outfuns, 
                              layers=generator_layers)   
         generator_dropout = tf.placeholder(tf.float32, ())
         latent_sample = tf.placeholder(tf.float32, [num_samples, generator_layers[0]])
-        generated_patterns = generator.update(latent_sample)           
+        generated_patterns = generator.update(latent_sample, generator_dropout)           
     #---------------------------------------------------------------------------
     #  Discriminator
     with tf.variable_scope('Discriminator'):    
         discriminator_layers = [n_mnist_pixels, 1024, 512, 256, 1]
         discriminator_outfuns =[tf.nn.relu, tf.nn.relu, tf.nn.relu,  tf.nn.sigmoid]
-        discriminator = MLP(lr=lr, scope="D", drop_out=0.3,
+        discriminator = MLP(lr=lr, scope="D", drop_out=1.0,
                              outfuns=discriminator_outfuns,
                              layers=discriminator_layers)
         discriminator_dropout = tf.placeholder(tf.float32, ())
         data_sample = tf.placeholder(tf.float32, [num_samples, discriminator_layers[0]])
-        D_probs = discriminator.update(data_sample)
-        G_probs = discriminator.update(generated_patterns)
+        D_probs = discriminator.update(data_sample, discriminator_dropout)
+        G_probs = discriminator.update(generated_patterns, discriminator_dropout)
     #---------------------------------------------------------------------------
     # Losses
     D_loss = tf.reduce_mean(tf.log(D_probs + eps) + tf.log(1.0 - G_probs + eps))  
@@ -205,15 +204,15 @@ with graph.as_default():
                 d_probs, d_loss, d_change, _ = session.run([D_probs, D_loss, Dw_change, D_train], 
                     feed_dict={latent_sample:curr_latent_sample,
                                data_sample:curr_data_sample, 
-                               discriminator_dropout: 0.3,
-                               generator_dropout: 0.0})
+                               discriminator_dropout: dropout,
+                               generator_dropout: 1.0})
                      
                 # generator step 
                 curr_latent_sample = get_latent_sample()
                 g_probs, g_loss, g_change,_ = session.run([G_probs, G_loss, Gw_change, G_train], 
                     feed_dict={latent_sample:curr_latent_sample, 
-                               discriminator_dropout: 0.3,
-                               generator_dropout: 0.0})        
+                               discriminator_dropout: dropout,
+                               generator_dropout: 1.0})        
                 
                 D_losses.append(d_loss)
                 G_losses.append(g_loss)      
@@ -225,11 +224,9 @@ with graph.as_default():
             HIST_D_changes.append(np.mean(D_changes))
             HIST_G_changes.append(np.mean(G_changes))  
                      
-            print HIST_D_losses[-1], HIST_G_losses[-1]
-            
             patterns = session.run(generated_patterns, {latent_sample:fixed_latent_sample,
-                                                        discriminator_dropout: 0.0,
-                                                        generator_dropout: 0.0})
+                                                        discriminator_dropout: dropout,
+                                                        generator_dropout: 1.0})
             plotter.plot(
                 HIST_G_losses, 
                 HIST_D_losses,

@@ -53,7 +53,7 @@ class MLP(object):
         for i, (w, b, f) in enumerate(zip(self.weights, self.biases, self.outfuns)):
             h = f(tf.matmul(self.layers[i], w) + b)
             if i < n - 1: 
-                h = tf.layers.dropout(h, drop_out) 
+                h = tf.nn.dropout(h, drop_out) 
             self.layers.append(h)
         return h
       
