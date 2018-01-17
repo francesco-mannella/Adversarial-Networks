@@ -13,13 +13,15 @@ Generative adversarial autoencoder
 * A multilayered perceptron as the autoencoder network 
     takes samples for the mnist dataset and reproduces them
     
-    encoder:  X(28*28) -> H1(512) -> H2(256) -> Z(2)
-    decoder:  Z(2)     -> H1(256) -> H2(512) -> Y(28*28)
+    encoder:  X(28*28) -> H1(1000) -> H2(1000) -> Z(2)
+    decoder:  Z(2)     -> H1(1000) -> H2(1000) -> Y(28*28)
     
 * A multilayered perceptron as the discriminator network - p = D(Z)
     takes a sample form the hidden pattern space Z and gives a probability 
     that the image belongs to a prior distribution Z_g
     and not the encoder inner activities Z_d
+    
+    discriminator:  Z(2) -> H1(1000) -> H2(1000) -> Y(1)
 
     1) the autoencoder minimizes:
         R_loss =  mean(sqrt( Y - X)**2))
@@ -38,6 +40,7 @@ import os
 current_seed = np.fromstring(os.urandom(4), dtype=np.uint32)[0]
 print "seed:%d" % current_seed
 rng = np.random.RandomState(current_seed) 
+tf.set_random_seed(current_seed)
 #-------------------------------------------------------------------------------
 #-------------------------------------------------------------------------------
 #-------------------------------------------------------------------------------
@@ -72,9 +75,9 @@ data, data_labels = shuffle_imgs()
 #Globals 
 epochs = 100
 num_samples = 100
-eps = 1e-2
-rlr = 0.0001
-alr = 0.0001
+eps = 1e-5
+rlr = 0.0002
+alr = 0.0002
 tests = 10000
 #---------------------------------------------------------------------------  
 #---------------------------------------------------------------------------  
@@ -87,7 +90,7 @@ class Plotter(object):
 
         self.fig = plt.figure(figsize=(12,8))
         l = 6
-        gs = gridspec.GridSpec(self.n + l, self.n*2)
+        gs = gridspec.GridSpec(10 + l, 10*2)
         
         self.losses_ax = self.fig.add_subplot(gs[:l-1,:])
         self.losses_ax.set_title("Reconstruction error")
@@ -99,7 +102,7 @@ class Plotter(object):
         self.losses_ax.set_xlim([0, epochs]) 
         self.losses_ax.set_ylim([0.1, 0.4])
                    
-        self.hidden_ax = self.fig.add_subplot(gs[l:,:(self.n)])
+        self.hidden_ax = self.fig.add_subplot(gs[l:,:10])
         self.hidden_ax.set_title("Hidden layer activation")
         self.hidden_scatter = self.hidden_ax.scatter(0,0, lw=0, s=5)
         self.hidden_ax.set_xlim([-5,5])
@@ -107,9 +110,9 @@ class Plotter(object):
         
         self.pattern_axes = []
         self.pattern_imgs = []
-        for x in range(self.n):
-            for y in range(self.n):
-                ax = self.fig.add_subplot(gs[l + x, self.n + y])
+        for x in range(10):
+            for y in range(10):
+                ax = self.fig.add_subplot(gs[l + x, 10 + y])
                 im = ax.imshow(np.zeros([img_side, img_side]), 
                                vmin=-1, vmax=1)
                 ax.get_xaxis().set_visible(False)
@@ -126,13 +129,12 @@ class Plotter(object):
         self.hidden_scatter.set_offsets(hidden)   
         self.hidden_scatter.set_facecolor(plt.cm.hsv(labels/10.0))    
         self.hidden_scatter.set_edgecolor(plt.cm.hsv(labels/10.0))    
-        l = len(patterns)
-        for x in range(self.n):
-            for y in range(self.n):
-                k = x*self.n + y     
+        
+        for x in range(10):
+            for y in range(10):
+                k = x*10 + y     
                 im = self.pattern_imgs[k]
-                if k<l:
-                    im.set_data(patterns[k].reshape(img_side, img_side))
+                im.set_data(patterns[k].reshape(img_side, img_side))
         self.fig.canvas.draw()
         self.fig.savefig("aae-{:03d}.png".format(self.t))
         self.t += 1
@@ -185,8 +187,8 @@ def get_10_prior_sample():
 
     res = np.vstack([
         np.random.multivariate_normal(
-                        [np.sin(k), np.cos(k)],
-                        sigma(theta=k, sigma_x=0.06, sigma_y=0.8),
+                        [1.8*np.sin(k), 1.8*np.cos(k)],
+                        sigma(theta=k, sigma_x=0.2, sigma_y=2.0),
                         num_samples/10) 
                       for k in np.linspace(0, (2*np.pi)*(9./10.), 10)])
     return res
@@ -201,7 +203,7 @@ def get_grid():
     Define a distributed grid of points in the space of 
     the hidden patterns pair
     """        
-    x = np.linspace(-2.0,2.0,int(np.sqrt(num_samples)))     
+    x = np.linspace(-2.0,2.0,10)     
     X, Y = np.meshgrid(x,x)
     return np.vstack((X.ravel(), Y.ravel())).T
 # build the grid 
@@ -219,7 +221,7 @@ with graph.as_default():
     drop_out = tf.placeholder(tf.float32, ())
     #  Encoder
     with tf.variable_scope('Encoder'):
-        encoder_layers = [n_mnist_pixels, 512, 256, 2]
+        encoder_layers = [n_mnist_pixels, 1000, 1000, 2]
         encoder_outfuns =[tf.nn.relu, tf.nn.relu, linear] 
         encoder = MLP(lr=rlr, scope="E",
                              outfuns=encoder_outfuns, 
@@ -232,7 +234,7 @@ with graph.as_default():
     #---------------------------------------------------------------------------
     #  Decoder
     with tf.variable_scope('decoder'):
-        decoder_layers = [2, 512, 256, n_mnist_pixels]
+        decoder_layers = [2, 1000, 1000, n_mnist_pixels]
         decoder_outfuns =[tf.nn.relu, tf.nn.relu, tf.nn.tanh] 
         decoder = MLP(lr=alr, scope="D",
                              outfuns=decoder_outfuns, 
@@ -241,13 +243,15 @@ with graph.as_default():
     #---------------------------------------------------------------------------
     #  Adversarial       
     with tf.variable_scope('adversarial'):
-        adversarial_layers = [2, 256, 512, 256, 1]
-        adversarial_outfuns =[tf.nn.relu, tf.nn.relu,  tf.nn.relu, tf.nn.sigmoid] 
+        adversarial_layers = [2, 1000, 1000, 1]
+        adversarial_outfuns =[tf.nn.relu, tf.nn.relu, tf.nn.sigmoid] 
         adversarial = MLP(lr=rlr, scope="A",
                              outfuns=adversarial_outfuns, 
                              layers=adversarial_layers)   
         prior_sample = tf.placeholder(tf.float32, [num_samples, decoder_layers[0]])
+        test_sample = tf.placeholder(tf.float32, [100, decoder_layers[0]])
         generated_patterns = decoder.update(prior_sample, drop_out)   
+        test_generated_patterns = decoder.update(test_sample, drop_out)   
         D_probs = adversarial.update(prior_sample, drop_out)
         G_probs = adversarial.update(hidden_patterns, drop_out)        
     #---------------------------------------------------------------------------   
@@ -297,13 +301,13 @@ with graph.as_default():
                 
             R_losses.append(np.mean(r_losses))
             
-            curr_patterns = session.run(generated_patterns, 
-                feed_dict={prior_sample:grid, 
+            curr_patterns = session.run(test_generated_patterns, 
+                feed_dict={test_sample:grid, 
                            drop_out: 1.0})
             curr_hidden_patterns = session.run(test_hidden_patterns, 
                 feed_dict={data_test:test_data, 
                            drop_out: 1.0})
-            
+
             plotter.plot(R_losses, curr_hidden_patterns, test_labels, curr_patterns)
                 
         raw_input()

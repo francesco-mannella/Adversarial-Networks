@@ -24,19 +24,30 @@ class MLP(object):
         self.drop_out = drop_out
         self.scope = scope
     
-        w_init = tf.truncated_normal_initializer(mean=0, stddev=0.02)
-        b_init = tf.constant_initializer(0.)   
-        shapes = [(layers[i], layers[i + 1]) for i in range(0, len(layers) - 1)]
-        self.weights = [tf.get_variable(
-            name="w{}_{}".format(scope, i), 
-            dtype=tf.float32, 
-            shape=shapes[i],
-            initializer=w_init) for i in range(len(layers) - 1)]   
-        self.biases = [tf.get_variable(
-            name="b{}_{}".format(scope, i), 
-            dtype=tf.float32, 
-            shape=shapes[i][1],
-            initializer=b_init) for i in range(len(layers) - 1)]
+        self.weights = []
+        self.biases = []
+        self.shapes = []
+        for i in range(len(layers) - 1):
+  
+            shape = (layers[i], layers[i + 1])
+            scale = 3*np.sqrt(6.0/ ( shape[0] + shape[1]) )
+            scale = 0.1
+            w_init = tf.random_uniform_initializer(-scale, scale)
+            b_init = tf.constant_initializer(0.)       
+            weight = tf.get_variable(
+                name="w{}_{}".format(scope, i), 
+                dtype=tf.float32, 
+                shape=shape,
+                initializer=w_init)    
+            bias = tf.get_variable(
+                name="b{}_{}".format(scope, i), 
+                dtype=tf.float32, 
+                shape=[1, shape[1]],
+                initializer=b_init)
+            self.weights.append(weight)
+            self.biases.append(bias)
+            self.shapes.append(shape)
+            
         self.weights_biases = self.weights + self.biases
 
     def update(self, inp, drop_out=None): 
