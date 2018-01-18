@@ -66,8 +66,8 @@ class MLP(object):
     '''
     Multilayer perceptron
     '''
-    def __init__(self, lr, outfuns, layers_lens, convs, deconvs, 
-            strides, copy_from=None, drop_out=1.0, scope="bp"): 
+    def __init__(self, lr, outfuns, layers_lens,  convs=None, deconvs=None, strides=None,
+            copy_from=None, drop_out=1.0, scope="bp"): 
         """
         :param lr: float, learning rate 
         :param outfuns: list(callable), list of activation functions for each layer
@@ -81,14 +81,22 @@ class MLP(object):
         """
         self.lr = lr
         self.layers_lens = layers_lens
-        self.convs = convs
-        self.deconvs = deconvs
         self.strides = strides
         self.outfuns = outfuns
         self.copy_from = copy_from
+        self.convs = convs
+        self.deconvs = deconvs
+        self.drop_out = drop_out
+        
+        self.layers_lens = [x if not np.isscalar(x) else [x] for x in self.layers_lens ]
+        if self.strides is None :
+            self.strides = [ None for x in range(len(layers_lens) - 1)]   
+        if self.convs is None :
+            self.convs = [ None for x in range(len(layers_lens) - 1)]        
+        if self.deconvs is None :
+            self.deconvs = [ None for x in range(len(layers_lens) - 1)]
         if self.copy_from is None :
             self.copy_from = [ None for x in range(len(layers_lens) - 1)]
-        self.drop_out = drop_out
 
         # lists of network variables  
         self.weights = []
@@ -98,7 +106,7 @@ class MLP(object):
     
         # compute first layer shape
         for curr_l0, (inp_shape_, out_shape_, conv, deconv, copy_index, outfun) \
-                in enumerate(zip(layers_lens[:-1], layers_lens[1:], 
+                in enumerate(zip(self.layers_lens[:-1], self.layers_lens[1:], 
                     self.convs, self.deconvs, self.copy_from, self.outfuns)):
 
             inp_shape = [None] + inp_shape_[:]
