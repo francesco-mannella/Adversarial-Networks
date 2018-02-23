@@ -89,7 +89,7 @@ with graph.as_default():
     # get Samples   
     def get_latent_sample():
         return rng.randn(num_samples, generator_layers[0])
-    
+
     def get_data_sample(iter):
         return np.vstack(data[iter*num_samples:(iter+1)*num_samples])
     
