@@ -11,11 +11,11 @@ class MLP(object):
     '''
     Multilayer perceptron
     '''
-    def __init__(self, lr, outfuns, layers, drop_out=1.0, scope="bp"): 
+    def __init__(self, lr, outfuns, layers_lens, drop_out=1.0, scope="bp"): 
         """
         :param lr: float, learning rate 
         :param outfuns: list(callable), list of activation functions for each layer
-        :param layers: list(int), number of units per layer
+        :param layers_lens: list(int), number of units per layer
         :param drop_out: float, probability of retain units
         :param scope: string, a label defining the scope of the MLP object's variables
         """
@@ -27,10 +27,9 @@ class MLP(object):
         self.weights = []
         self.biases = []
         self.shapes = []
-        for i in range(len(layers) - 1):
+        for i in range(len(layers_lens) - 1):
   
-            shape = (layers[i], layers[i + 1])
-            scale = 3*np.sqrt(6.0/ ( shape[0] + shape[1]) )
+            shape = (layers_lens[i], layers_lens[i + 1])
             scale = 0.1
             w_init = tf.random_uniform_initializer(-scale, scale)
             b_init = tf.constant_initializer(0.)       
@@ -59,13 +58,13 @@ class MLP(object):
         """
         if drop_out is None: drop_out = self.drop_out
         n = len(self.weights)
-        self.layers = []
-        self.layers.append(inp)
+        self.layers_lens = []
+        self.layers_lens.append(inp)
         for i, (w, b, f) in enumerate(zip(self.weights, self.biases, self.outfuns)):
-            h = f(tf.matmul(self.layers[i], w) + b)
+            h = f(tf.matmul(self.layers_lens[i], w) + b)
             if i < n - 1: 
                 h = tf.nn.dropout(h, drop_out) 
-            self.layers.append(h)
+            self.layers_lens.append(h)
         return h
       
     def train(self, loss, lr = None):

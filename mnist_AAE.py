@@ -1,20 +1,28 @@
 # -*- coding: utf-8 -*-
-
-
 import os
-import imageio
-import glob
-
 import numpy as np
-import matplotlib.pyplot as plt
-import matplotlib.gridspec as gridspec
 import tensorflow as tf
-from convolutional_mlp import MLP, linear
-
-
+from convolutional_mlp import MLP, linear, leaky_relu
+#-------------------------------------------------------------------------------
+#-------------------------------------------------------------------------------
+#-------------------------------------------------------------------------------
+# mnist
+from mnist_init_training_set import MNIST_manager
+mmanager = MNIST_manager()
+img_side, n_mnist_pixels, n_train = mmanager.get_params() 
+data, data_labels = mmanager.shuffle_imgs()
+#-------------------------------------------------------------------------------
+#-------------------------------------------------------------------------------
+#-------------------------------------------------------------------------------
+# plot
+import matplotlib.pyplot as plt
 plt.ion()
+from mnist_AAE_plot import Plotter
+#-------------------------------------------------------------------------------
+#-------------------------------------------------------------------------------
+#-------------------------------------------------------------------------------
 """
-Generative adversarial autoencoder
+Adversarial autoencoder
 
 * A multilayered perceptron as the autoencoder network 
     takes samples for the mnist dataset and reproduces them
@@ -42,127 +50,26 @@ config = tf.ConfigProto()
 config.gpu_options.allow_growth = True
 #-------------------------------------------------------------------------------
 # set the seed for random numbers generation
-current_seed = np.fromstring(os.urandom(4), dtype=np.uint32)[0]
+current_seed = np.frombuffer(os.urandom(4), dtype=np.uint32)[0]
 print "seed:%d" % current_seed
 rng = np.random.RandomState(current_seed) 
 tf.set_random_seed(current_seed)
-#-------------------------------------------------------------------------------
-#-------------------------------------------------------------------------------
-#-------------------------------------------------------------------------------
-# mnist
-# import the mnist class
-from mnist import MNIST
-# init with the 'data' dir
-mndata = MNIST('./data')
-# Load data
-mndata.load_training()
-# The number of pixels per side of all images
-img_side = 28
-# Each input is a raw vector.
-# The number of units of the network
-# corresponds to the number of input elements
-n_mnist_pixels = img_side * img_side
-# lengths of datatasets patterns
-n_train = len(mndata.train_images)
-# convert data into {-1,1} arrays
-images = np.vstack(mndata.train_images[:])/255.0
-images = 2*images - 1
-# shuffle img indices
-image_labels = np.hstack(mndata.train_labels)
-idcs = np.arange(n_train)
-def shuffle_imgs():
-    np.random.shuffle(idcs)
-    return images[idcs], image_labels[idcs]
-data, data_labels = shuffle_imgs()
 #---------------------------------------------------------------------------  
 #---------------------------------------------------------------------------  
 #---------------------------------------------------------------------------  
 #Globals 
-epochs = 50
-num_samples = 100
-eps = 1e-5
-rlr = 0.0003
-alr = 0.0003
-tests = 10000
-#---------------------------------------------------------------------------  
-#---------------------------------------------------------------------------  
-#---------------------------------------------------------------------------  
-# Plot
-class Plotter(object):  
-    def __init__(self):   
-        self.t = 0
-        self.n = int(np.sqrt(num_samples))
+epochs = 100
+num_samples = 50
+eps = 1e-10
+rlr = 0.0001
+alr = 0.0001
+tests = 60000
+dropout_train = 0.2
+dropout_test = 1.0
+weight_scale = 0.02
+decay = 0.01
 
-        self.fig = plt.figure(figsize=(12,8))
-        self.h = 10
-        self.w = 4
-        self.s = 20
-        
-        h , w, s = (self.h, self.w, self.s)
-        gs = gridspec.GridSpec(s + h, s*2 + w)
-        
-        self.losses_ax = self.fig.add_subplot(gs[1:h-4, 2:s*2+w-2])
-        self.losses_ax.set_title("Reconstruction error")
-        self.losses_lines = []
-        line, = self.losses_ax.plot(0,0)   
-        self.losses_lines.append(line)
-        self.labels = ["reconstruction"]  
-        self.losses_ax.legend(self.losses_lines, self.labels)  
-        self.losses_ax.grid(color='b', linestyle='--', linewidth=0.5)
-        self.losses_ax.set_yticks(np.linspace(0,0.4, 11))
-        self.losses_ax.set_xlim([0, epochs]) 
-        self.losses_ax.set_ylim([0.14, 0.3])
-                   
-        self.hidden_ax = self.fig.add_subplot(gs[h - 1:s + h - 1,1:s + 1])
-        self.hidden_ax.set_title("Hidden layer activation")
-        self.hidden_scatter = self.hidden_ax.scatter(0,0, lw=0, s=5)
-        self.hidden_ax.set_xlim([-45,45])
-        self.hidden_ax.set_ylim([-45,45])
-        
-        self.pattern_axes = []
-        self.pattern_imgs = []
-        for x in range(s):
-            for y in range(s):
-                ax = self.fig.add_subplot(gs[h -1 + x, (s*2 + w)/2 + y])
-                im = ax.imshow(np.zeros([img_side, img_side]), 
-                               vmin=-1, vmax=1)
-                ax.get_xaxis().set_visible(False)
-                ax.get_yaxis().set_visible(False)
-                self.pattern_axes.append(ax)
-                self.pattern_imgs.append(im)
-        plt.subplots_adjust(top=1.0, bottom=0.0, 
-                            left=0.0, right=1.0, 
-                            hspace=0.0, wspace=0.0)
-        if not os.path.exists("imgs"):
-            os.makedirs("imgs")  
-            
-    def plot(self, R_loss, hidden, labels, patterns):
-        
-        losses = [R_loss]   
-        t = len(R_loss)
-        self.losses_lines[0].set_data(np.arange(t), R_loss)
-            
-        self.hidden_scatter.set_offsets(hidden)   
-        self.hidden_scatter.set_facecolor(plt.cm.hsv(labels/10.0))    
-        self.hidden_scatter.set_edgecolor(plt.cm.hsv(labels/10.0))    
-        
-        for x in range(self.s):
-            for y in range(self.s):
-                k = x*self.s + y     
-                im = self.pattern_imgs[k]
-                im.set_data(patterns[k].reshape(img_side, img_side))
-        self.fig.canvas.draw()
-        self.fig.savefig("imgs/aae.png".format(self.t))
-        self.fig.savefig("imgs/aae-{:03d}.png".format(self.t))
-        self.t += 1
-        
-    def make_gif(self):
-        images = []
-        for filename in glob.glob("imgs/aae-*.png"):
-            images.append(imageio.imread(filename))
-            imageio.mimsave('aae.gif', images, duration= 0.3)
-                 
-plotter = Plotter()
+plotter = Plotter(epochs)
 #-------------------------------------------------------------------------------
 #-------------------------------------------------------------------------------
 #-------------------------------------------------------------------------------
@@ -179,7 +86,7 @@ def get_simple_prior_sample():
     get a batch sample of hidden pattern pairs generated from a 
     simple N(0, 1) distribution
     """
-    return rng.randn(num_samples, 2)
+    return 10*rng.randn(num_samples, 2)
 #-------------------------------------------------------------------------------
 def get_2_prior_sample():
     """
@@ -195,6 +102,7 @@ def get_2_prior_sample():
     return switch*(s1*rng.randn(num_samples, 2) + m1) + \
         (1-switch)*(s2*rng.randn(num_samples, 2) + m2)
 
+thetas = np.linspace(0, (2*np.pi)*(9./10.), 10) 
 def get_10_prior_sample():
     """
     get a batch sample of hidden patterns pairs generated from a 
@@ -208,27 +116,30 @@ def get_10_prior_sample():
         c = (np.sin(theta)**2)/(2*sigma_x**2) + (np.cos(theta)**2)/(2*sigma_y**2)
         return np.array([[a, b],[b, c]])
 
+    curr_thetas = thetas[rng.randint(0, 10, num_samples)]
+        
     res = np.vstack([
-        np.random.multivariate_normal(
-                        [24*np.sin(k), 24*np.cos(k)],
-                        sigma(theta=k, sigma_x=1, sigma_y=10),
-                        num_samples/10) 
-                      for k in np.linspace(0, (2*np.pi)*(9./10.), 10)])
+        rng.multivariate_normal(
+                        [12*np.sin(k), 12*np.cos(k)],
+                        sigma(theta=k, sigma_x=1, sigma_y=10), 1) 
+                      for k in curr_thetas])
     return res
-#-------------------------------------------------------------------------------
-#@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
+
 # pointer to the chosen prior distribution 
 get_prior_sample = get_10_prior_sample
-#@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
+
 #-------------------------------------------------------------------------------
 def get_grid():  
     """
     Define a distributed grid of points in the space of 
     the hidden patterns pair
     """        
-    x = np.linspace(-40.0, 40.0, 20)     
-    X, Y = np.meshgrid(x,x)
-    return np.vstack((X.ravel(), Y.ravel())).T
+    x = np.linspace(-40, 40, 20)     
+    Y, X = np.meshgrid(x,x)
+    res = np.vstack((X.ravel(), Y.ravel())).T
+    res = res[:, ::-1]
+    return res
+
 # build the grid 
 grid = get_grid()
 #-------------------------------------------------------------------------------
@@ -236,102 +147,150 @@ grid = get_grid()
 test_data = data[:tests]
 test_labels = data_labels[:tests]
 #-------------------------------------------------------------------------------
+print "globals and samples initialized"
+#-------------------------------------------------------------------------------
 #-------------------------------------------------------------------------------
 #-------------------------------------------------------------------------------
 graph = tf.Graph()
 with graph.as_default():
 #-------------------------------------------------------------------------------
     drop_out = tf.placeholder(tf.float32, ())
-    #  Encoder
-    with tf.variable_scope('Encoder'):
-        encoder_layers = [n_mnist_pixels, 1000, 1000, 2]
-        encoder_outfuns =[tf.nn.relu, tf.nn.relu, linear] 
-        encoder = MLP(lr=rlr, scope="E",
-                             outfuns=encoder_outfuns, 
-                             layers_lens=encoder_layers)   
-        data_sample = tf.placeholder(tf.float32, [num_samples, encoder_layers[0]])
-        hidden_patterns = encoder.update(data_sample, drop_out)   
-        #------
-        data_test = tf.placeholder(tf.float32, [tests, encoder_layers[0]])
-        test_hidden_patterns = encoder.update(data_test, drop_out)      
+    phase_train = tf.placeholder(tf.bool)
+    
     #---------------------------------------------------------------------------
-    #  Decoder
-    with tf.variable_scope('decoder'):
-        decoder_layers = [2, 1000, 1000, n_mnist_pixels]
-        decoder_outfuns =[tf.nn.relu, tf.nn.relu, tf.nn.tanh] 
-        decoder = MLP(lr=alr, scope="D",
-                             outfuns=decoder_outfuns, 
-                             layers_lens=decoder_layers)    
-        decoded_patterns = decoder.update(hidden_patterns, drop_out)   
+    # Encoder
+    #### network init 
+    encoder_layers = [n_mnist_pixels, 1000, 1000, 2]
+    encoder_dropout =[False, False, False] 
+    encoder_bn = [False, False, False] 
+    encoder_outfuns =[tf.nn.relu, tf.nn.relu, linear] 
+    encoder = MLP(scope="Encoder", 
+                  lr=rlr,
+                  bn_decay=decay,
+                  weight_scale=weight_scale,
+                  batch_norms=encoder_bn,
+                  outfuns=encoder_outfuns, 
+                  drop_out=encoder_dropout,
+                  layers_lens=encoder_layers)   
+    data_sample = tf.placeholder(tf.float32, [num_samples, encoder_layers[0]])
+    #### training branch
+    hidden_patterns = encoder.update(data_sample, drop_out=drop_out, phase_train=phase_train)
+    #### test branch
+    data_test = tf.placeholder(tf.float32, [tests, encoder_layers[0]])
+    test_hidden_patterns = encoder.update(data_test, drop_out=drop_out, phase_train=phase_train)      
+    print "Encoder tree has been built"
+
+    #---------------------------------------------------------------------------
+    # Decoder
+    #### network init
+    decoder_layers = [2, 1000, 1000, n_mnist_pixels]
+    decoder_dropout =[False, False, False] 
+    decoder_bn = [False, False, False] 
+    decoder_outfuns =[tf.nn.relu, tf.nn.relu, tf.nn.tanh] 
+    decoder = MLP(scope="Decoder",
+                  lr=rlr, 
+                  bn_decay=decay,
+                  weight_scale=weight_scale,
+                  batch_norms=decoder_bn,
+                  drop_out=decoder_dropout,
+                  outfuns=decoder_outfuns, 
+                  layers_lens=decoder_layers)    
+    #### training branch
+    decoded_patterns = decoder.update(hidden_patterns, drop_out=drop_out, phase_train=phase_train)   
+    print "Decoder tree has been built"
+
     #---------------------------------------------------------------------------
     #  Adversarial       
-    with tf.variable_scope('adversarial'):
-        adversarial_layers = [2, 1000, 1000, 1]
-        adversarial_outfuns =[tf.nn.relu, tf.nn.relu, tf.nn.sigmoid] 
-        adversarial = MLP(lr=rlr, scope="A",
-                             outfuns=adversarial_outfuns, 
-                             layers_lens=adversarial_layers)   
-        
-        prior_sample = tf.placeholder(tf.float32, [num_samples, decoder_layers[0]])
-        test_sample = tf.placeholder(tf.float32, [400, decoder_layers[0]])
-        generated_patterns = decoder.update(prior_sample, drop_out)   
-        test_generated_patterns = decoder.update(test_sample, drop_out)   
-        D_probs = adversarial.update(prior_sample, drop_out)
-        G_probs = adversarial.update(hidden_patterns, drop_out)        
+    #### network init
+    adversarial_layers = [2, 1000, 1000, 1]
+    adversarial_dropout =[True, True, False] 
+    adversarial_bn = [False, False, False]
+    adversarial_outfuns =[ tf.nn.relu, tf.nn.relu, tf.nn.sigmoid] 
+    adversarial = MLP(scope="Adversarial",
+                      lr=alr, 
+                      bn_decay=decay,
+                      weight_scale=weight_scale,
+                      batch_norms=adversarial_bn,
+                      drop_out=adversarial_dropout,
+                      outfuns=adversarial_outfuns,
+                      layers_lens=adversarial_layers)   
+    #### Discriminator branch
+    prior_sample = tf.placeholder(tf.float32, [num_samples, decoder_layers[0]])
+    prior_generated_patterns = decoder.update(prior_sample, drop_out=drop_out, phase_train=phase_train)   
+    D_probs = adversarial.update(prior_sample, drop_out=drop_out, phase_train=phase_train)
+    #### Generator branch
+    G_probs = adversarial.update(hidden_patterns, drop_out=drop_out, phase_train=phase_train)        
+    print "Adversarial tree has been built"
+    test_sample = tf.placeholder(tf.float32, [400, decoder_layers[0]])
+    test_generated_patterns = decoder.update(test_sample, drop_out=drop_out, phase_train=phase_train)  
+
     #---------------------------------------------------------------------------   
+    # Losses
     R_loss = tf.losses.mean_squared_error(data_sample, decoded_patterns)
     D_loss = tf.reduce_mean(-tf.log(D_probs + eps) - tf.log(1.0 - G_probs + eps))  
     G_loss = tf.reduce_mean(-tf.log(G_probs + eps))
+    print "Losses branches have been added"
+
     #---------------------------------------------------------------------------
+    # Optimizations
     ER_train =  encoder.train(R_loss, lr=rlr)
     DR_train =  decoder.train(R_loss, lr=rlr)
     D_train =  adversarial.train(D_loss, lr=alr)
     G_train =  encoder.train(G_loss, lr=alr)
+    print "Optimizers branches have been added"
+
     #---------------------------------------------------------------------------   
     #---------------------------------------------------------------------------   
     #---------------------------------------------------------------------------   
     # Tf Session
     with tf.Session(config=config) as session:
-        writer = tf.summary.FileWriter("output", session.graph)
+        # writer = tf.summary.FileWriter("output", session.graph)
         session.run(tf.global_variables_initializer())
         R_losses = []
         for epoch in range(epochs):
         
             r_losses = []
-            data, data_labels = shuffle_imgs()
+            data, data_labels = mmanager.shuffle_imgs()
             for t in range(len(data)//num_samples):
-            
-                # reconstruction step -- encoder -> decoder (minimize reconstruction  error)
+                
+                # reconstruction step -- (minimize reconstruction  error)
+                #    data_sample -> encoder -> hidden_patterns -> decoder -> decoded_patterns
                 curr_data_sample, curr_data_labels = get_data_sample(t)
                 current_decoded_patterns, r_loss, _, _= session.run(
                     [decoded_patterns, R_loss, ER_train, DR_train], 
                     feed_dict={data_sample:curr_data_sample, 
-                               drop_out: 0.3})  
+                               drop_out: dropout_test, phase_train: True})  
                 
-                # adversarial step -- prior -> adversarial (minimize discrimination error)
+                # adversarial step -- (minimize discrimination error)
+                #    data_sample  -> encoder -> hidden_patterns -> adversarial -> G_props
+                #    prior_sample                               -> adversarial -> D_props
                 curr_prior_sample = get_prior_sample()
                 d_loss, _ = session.run([D_loss, D_train], 
                     feed_dict={data_sample:curr_data_sample, 
                                prior_sample:curr_prior_sample, 
-                               drop_out: 0.3})               
+                               drop_out: dropout_train, phase_train: True})               
                 
-                # adversarial step -- hidden -> adversarial (minimize discrimination error)
+                # adversarial step -- (maximize discrimination error)
+                #    data_sample  -> encoder -> hidden_patterns -> adversarial -> G_props
                 curr_prior_sample = get_prior_sample()
                 g_loss, _ = session.run([G_loss, G_train], 
                     feed_dict={data_sample:curr_data_sample, 
-                               drop_out: 0.3})                
+                               drop_out: dropout_train, phase_train: True})                
                 
                 r_losses.append(r_loss)
                 
             R_losses.append(np.mean(r_losses))
-            
+           
+            # test
+            # Current generation of image patterns in response to 
+            #   the presentation of a 2D grid of values to the two hidden units 
             curr_patterns = session.run(test_generated_patterns, 
-                feed_dict={test_sample:grid, 
-                           drop_out: 1.0})
+                feed_dict={test_sample:grid, drop_out: dropout_test, phase_train: False})
+            # Current activation of hidden units in response to the presentation of 
+            #   10000 data images
             curr_hidden_patterns = session.run(test_hidden_patterns, 
-                feed_dict={data_test:test_data, 
-                           drop_out: 1.0})
-
+                feed_dict={data_test:test_data, drop_out: dropout_test, phase_train: False})
+    
+            # plot
             plotter.plot(R_losses, curr_hidden_patterns, test_labels, curr_patterns)
                         
-        plotter.make_gif()
