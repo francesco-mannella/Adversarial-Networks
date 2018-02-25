@@ -2,17 +2,26 @@
 import os
 import numpy as np
 import tensorflow as tf
-from convolutional_mlp import MLP, linear, leaky_relu
+from convolutional_mlp import linear, leaky_relu
+from AAE import AAE
 #-------------------------------------------------------------------------------
 #-------------------------------------------------------------------------------
+#-------------------------------------------------------------------------------
+# only current needed GPU memory
+config = tf.ConfigProto()
+config.gpu_options.allow_growth = True
+#-------------------------------------------------------------------------------
+# set the seed for random numbers generation
+current_seed = np.frombuffer(os.urandom(4), dtype=np.uint32)[0]
+print "seed:%d" % current_seed
+rng = np.random.RandomState(current_seed) 
+tf.set_random_seed(current_seed)
 #-------------------------------------------------------------------------------
 # mnist
 from mnist_init_training_set import MNIST_manager
 mmanager = MNIST_manager()
 img_side, n_mnist_pixels, n_train = mmanager.get_params() 
 data, data_labels = mmanager.shuffle_imgs()
-#-------------------------------------------------------------------------------
-#-------------------------------------------------------------------------------
 #-------------------------------------------------------------------------------
 # plot
 import matplotlib.pyplot as plt
@@ -44,20 +53,11 @@ Adversarial autoencoder
     the encoder part of the autoencoder maximizes:
         G_loss = log( D(Z_p) 
 """
-#-------------------------------------------------------------------------------
-# only current needed GPU memory
-config = tf.ConfigProto()
-config.gpu_options.allow_growth = True
-#-------------------------------------------------------------------------------
-# set the seed for random numbers generation
-current_seed = np.frombuffer(os.urandom(4), dtype=np.uint32)[0]
-print "seed:%d" % current_seed
-rng = np.random.RandomState(current_seed) 
-tf.set_random_seed(current_seed)
 #---------------------------------------------------------------------------  
 #---------------------------------------------------------------------------  
 #---------------------------------------------------------------------------  
-#Globals 
+
+# Globals 
 epochs = 100
 num_samples = 50
 eps = 1e-10
@@ -68,11 +68,12 @@ dropout_train = 0.2
 dropout_test = 1.0
 weight_scale = 0.02
 decay = 0.01
-
 plotter = Plotter(epochs)
+
 #-------------------------------------------------------------------------------
 #-------------------------------------------------------------------------------
 #-------------------------------------------------------------------------------
+
 def get_data_sample(t):
     """
     get a batch sample of mnist patterns 
@@ -129,6 +130,7 @@ def get_10_prior_sample():
 get_prior_sample = get_10_prior_sample
 
 #-------------------------------------------------------------------------------
+
 def get_grid():  
     """
     Define a distributed grid of points in the space of 
@@ -142,106 +144,39 @@ def get_grid():
 
 # build the grid 
 grid = get_grid()
+
 #-------------------------------------------------------------------------------
+
 # data used for the test phase
 test_data = data[:tests]
 test_labels = data_labels[:tests]
+
 #-------------------------------------------------------------------------------
 print "globals and samples initialized"
 #-------------------------------------------------------------------------------
 #-------------------------------------------------------------------------------
 #-------------------------------------------------------------------------------
+
 graph = tf.Graph()
 with graph.as_default():
-#-------------------------------------------------------------------------------
-    drop_out = tf.placeholder(tf.float32, ())
-    phase_train = tf.placeholder(tf.bool)
     
-    #---------------------------------------------------------------------------
-    # Encoder
-    #### network init 
     encoder_layers = [n_mnist_pixels, 1000, 1000, 2]
     encoder_dropout =[False, False, False] 
-    encoder_bn = [False, False, False] 
     encoder_outfuns =[tf.nn.relu, tf.nn.relu, linear] 
-    encoder = MLP(scope="Encoder", 
-                  lr=rlr,
-                  bn_decay=decay,
-                  weight_scale=weight_scale,
-                  batch_norms=encoder_bn,
-                  outfuns=encoder_outfuns, 
-                  drop_out=encoder_dropout,
-                  layers_lens=encoder_layers)   
-    data_sample = tf.placeholder(tf.float32, [num_samples, encoder_layers[0]])
-    #### training branch
-    hidden_patterns = encoder.update(data_sample, drop_out=drop_out, phase_train=phase_train)
-    #### test branch
-    data_test = tf.placeholder(tf.float32, [tests, encoder_layers[0]])
-    test_hidden_patterns = encoder.update(data_test, drop_out=drop_out, phase_train=phase_train)      
-    print "Encoder tree has been built"
 
-    #---------------------------------------------------------------------------
-    # Decoder
-    #### network init
     decoder_layers = [2, 1000, 1000, n_mnist_pixels]
     decoder_dropout =[False, False, False] 
-    decoder_bn = [False, False, False] 
     decoder_outfuns =[tf.nn.relu, tf.nn.relu, tf.nn.tanh] 
-    decoder = MLP(scope="Decoder",
-                  lr=rlr, 
-                  bn_decay=decay,
-                  weight_scale=weight_scale,
-                  batch_norms=decoder_bn,
-                  drop_out=decoder_dropout,
-                  outfuns=decoder_outfuns, 
-                  layers_lens=decoder_layers)    
-    #### training branch
-    decoded_patterns = decoder.update(hidden_patterns, drop_out=drop_out, phase_train=phase_train)   
-    print "Decoder tree has been built"
 
-    #---------------------------------------------------------------------------
-    #  Adversarial       
-    #### network init
     adversarial_layers = [2, 1000, 1000, 1]
     adversarial_dropout =[True, True, False] 
-    adversarial_bn = [False, False, False]
     adversarial_outfuns =[ tf.nn.relu, tf.nn.relu, tf.nn.sigmoid] 
-    adversarial = MLP(scope="Adversarial",
-                      lr=alr, 
-                      bn_decay=decay,
-                      weight_scale=weight_scale,
-                      batch_norms=adversarial_bn,
-                      drop_out=adversarial_dropout,
-                      outfuns=adversarial_outfuns,
-                      layers_lens=adversarial_layers)   
-    #### Discriminator branch
-    prior_sample = tf.placeholder(tf.float32, [num_samples, decoder_layers[0]])
-    prior_generated_patterns = decoder.update(prior_sample, drop_out=drop_out, phase_train=phase_train)   
-    D_probs = adversarial.update(prior_sample, drop_out=drop_out, phase_train=phase_train)
-    #### Generator branch
-    G_probs = adversarial.update(hidden_patterns, drop_out=drop_out, phase_train=phase_train)        
-    print "Adversarial tree has been built"
-    test_sample = tf.placeholder(tf.float32, [400, decoder_layers[0]])
-    test_generated_patterns = decoder.update(test_sample, drop_out=drop_out, phase_train=phase_train)  
 
-    #---------------------------------------------------------------------------   
-    # Losses
-    R_loss = tf.losses.mean_squared_error(data_sample, decoded_patterns)
-    D_loss = tf.reduce_mean(-tf.log(D_probs + eps) - tf.log(1.0 - G_probs + eps))  
-    G_loss = tf.reduce_mean(-tf.log(G_probs + eps))
-    print "Losses branches have been added"
+    aae = AAE(rlr, alr, weight_scale, 
+            encoder_outfuns, encoder_layers,
+            decoder_outfuns, decoder_layers,
+            adversarial_outfuns, adversarial_layers)
 
-    #---------------------------------------------------------------------------
-    # Optimizations
-    ER_train =  encoder.train(R_loss, lr=rlr)
-    DR_train =  decoder.train(R_loss, lr=rlr)
-    D_train =  adversarial.train(D_loss, lr=alr)
-    G_train =  encoder.train(G_loss, lr=alr)
-    print "Optimizers branches have been added"
-
-    #---------------------------------------------------------------------------   
-    #---------------------------------------------------------------------------   
-    #---------------------------------------------------------------------------   
     # Tf Session
     with tf.Session(config=config) as session:
         # writer = tf.summary.FileWriter("output", session.graph)
@@ -253,43 +188,18 @@ with graph.as_default():
             data, data_labels = mmanager.shuffle_imgs()
             for t in range(len(data)//num_samples):
                 
-                # reconstruction step -- (minimize reconstruction  error)
-                #    data_sample -> encoder -> hidden_patterns -> decoder -> decoded_patterns
+                # train step
                 curr_data_sample, curr_data_labels = get_data_sample(t)
-                current_decoded_patterns, r_loss, _, _= session.run(
-                    [decoded_patterns, R_loss, ER_train, DR_train], 
-                    feed_dict={data_sample:curr_data_sample, 
-                               drop_out: dropout_test, phase_train: True})  
-                
-                # adversarial step -- (minimize discrimination error)
-                #    data_sample  -> encoder -> hidden_patterns -> adversarial -> G_props
-                #    prior_sample                               -> adversarial -> D_props
                 curr_prior_sample = get_prior_sample()
-                d_loss, _ = session.run([D_loss, D_train], 
-                    feed_dict={data_sample:curr_data_sample, 
-                               prior_sample:curr_prior_sample, 
-                               drop_out: dropout_train, phase_train: True})               
-                
-                # adversarial step -- (maximize discrimination error)
-                #    data_sample  -> encoder -> hidden_patterns -> adversarial -> G_props
-                curr_prior_sample = get_prior_sample()
-                g_loss, _ = session.run([G_loss, G_train], 
-                    feed_dict={data_sample:curr_data_sample, 
-                               drop_out: dropout_train, phase_train: True})                
+                current_decoded_patterns, r_loss, d_loss, g_loss = \
+                        aae.train_step(session, curr_data_sample, curr_prior_sample)
                 
                 r_losses.append(r_loss)
                 
             R_losses.append(np.mean(r_losses))
-           
+                
             # test
-            # Current generation of image patterns in response to 
-            #   the presentation of a 2D grid of values to the two hidden units 
-            curr_patterns = session.run(test_generated_patterns, 
-                feed_dict={test_sample:grid, drop_out: dropout_test, phase_train: False})
-            # Current activation of hidden units in response to the presentation of 
-            #   10000 data images
-            curr_hidden_patterns = session.run(test_hidden_patterns, 
-                feed_dict={data_test:test_data, drop_out: dropout_test, phase_train: False})
+            curr_patterns, curr_hidden_patterns = aae.test_step(session, grid, test_data)
     
             # plot
             plotter.plot(R_losses, curr_hidden_patterns, test_labels, curr_patterns)

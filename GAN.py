@@ -62,31 +62,44 @@ class GAN:
         self.G_probs = self.discriminator.update(self.generated_patterns, drop_out=self.curr_discriminator_dropout)
     
         # train graph
-        # Losses
-        self.D_loss = tf.reduce_mean(tf.log(self.D_probs + self.eps) + tf.log(1.0 - self.G_probs + self.eps))  
-        self.G_loss = tf.reduce_mean(tf.log(self.G_probs + self.eps))
-        # Optimize
+        self.losses()
+        
         self. D_train, self.Dw_change = self.discriminator.train(-self.D_loss)   
         self.G_train, self.Gw_change = self.generator.train(-self.G_loss)      
+    
+    def losses(self):
 
-    def train_step(self, session, curr_discr_latent_sample, curr_gen_latent_sample, curr_data_sample,
+        self.D_loss = tf.reduce_mean(tf.log(self.D_probs + self.eps) + tf.log(1.0 - self.G_probs + self.eps))  
+        self.G_loss = tf.reduce_mean(tf.log(self.G_probs + self.eps))
+
+    def train_step(self, session, curr_discr_latent_sample, 
+            curr_gen_latent_sample, curr_data_sample,
             generator_droprate=1.0, discriminator_droprate=0.3):
 
         # discriminator step
-        d_probs, d_loss, d_change, _ = session.run([self.D_probs, self.D_loss, self.Dw_change, self.D_train], 
-                feed_dict={self.latent_sample:curr_discr_latent_sample, self.data_sample:curr_data_sample, 
-                    self.curr_discriminator_dropout: discriminator_droprate, 
+        d_probs, d_loss, d_change, _ = session.run([self.D_probs,
+            self.D_loss, self.Dw_change, self.D_train], feed_dict={
+                self.latent_sample:curr_discr_latent_sample, 
+                self.data_sample:curr_data_sample, 
+                self.curr_discriminator_dropout: discriminator_droprate, 
                     self.curr_generator_dropout: generator_droprate})
 
         # generator step 
-        g_probs, g_loss, g_change,_ = session.run([self.G_probs, self.G_loss, self.Gw_change, self.G_train], 
-                feed_dict={self.latent_sample:curr_gen_latent_sample, self.curr_discriminator_dropout: discriminator_droprate,
-                    self.curr_generator_dropout: generator_droprate})  
+        g_probs, g_loss, g_change,_ = session.run([self.G_probs, 
+            self.G_loss, self.Gw_change, self.G_train], feed_dict={
+                self.latent_sample:curr_gen_latent_sample, 
+                self.curr_discriminator_dropout: discriminator_droprate,
+                self.curr_generator_dropout: generator_droprate})  
 
         return  d_probs, d_loss, d_change, g_probs, g_loss, g_change
 
     def generative_test_step(self, session, curr_latent_sample):
-            return session.run(self.generated_patterns, {self.latent_sample:curr_latent_sample,
-                self.curr_discriminator_dropout: 1.0, self.curr_generator_dropout: 1.0})
+
+        patterns = session.run(self.generated_patterns, feed_dict={
+            self.latent_sample:curr_latent_sample,
+            self.curr_discriminator_dropout: 1.0, 
+            self.curr_generator_dropout: 1.0})
+
+        return patterns
 
 

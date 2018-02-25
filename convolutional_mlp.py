@@ -194,7 +194,7 @@ class MLP(object):
     '''
     Multilayer perceptron
     '''
-    def __init__(self, lr, outfuns, layers_lens,  convs=None, deconvs=None, 
+    def __init__(self,  outfuns, layers_lens, lr=0.01, convs=None, deconvs=None, 
                  batch_norms=None, bn_decay=0.999, strides=None, copy_from=None, 
                  drop_out=None, weight_scale=0.02, scope="bp"): 
         """
