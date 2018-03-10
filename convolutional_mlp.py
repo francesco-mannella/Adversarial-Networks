@@ -1,6 +1,5 @@
 # -*- coding: utf-8 -*-
 import numpy as np
-import matplotlib.pyplot as plt
 import tensorflow as tf
 
 #-------------------------------------------------------------------------------
@@ -10,6 +9,9 @@ import tensorflow as tf
 def linear(x): 
     """  Linear activation """
     return x
+
+def tanh(x, scale=2.0):
+    return tf.tanh(x/scale)*scale
 
 def leaky_relu(x, alpha=0.2): 
     """  Leaky relu 
@@ -27,13 +29,13 @@ def tf_shape(x):
     Args:
         x:        A Tensor
     """
-    return x.get_shape().as_list()
+    shape = x.get_shape().as_list()
+    if shape[0] is None: shape[0] = tf.shape(x)[0]
+    return shape
 
 def tf_reshape(x, shape):
-    if shape[0] is None:
-        x = tf.reshape(x, [-1] + shape[1:])
-    else:
-        x = tf.reshape(x, shape)
+    shape[0] = tf.shape(x)[0]
+    x = tf.reshape(x, shape)
     return x
 
 
@@ -139,23 +141,26 @@ def deconv2d(x, W, k=1, inp_layers=1):
     Returns:
         a tensor
     """ 
-    x = unflatten(x, inp_layers)
-    out_shape = get_outshape(tf_shape(x), tf_shape(W), k, conv=False)  
-    strides=[1, k, k, 1]       
-    return tf.nn.conv2d_transpose(x, W, output_shape=out_shape,
+    batch_size = tf.shape(x)[0]
+    x_flatten = unflatten(x, inp_layers)
+    out_shape = get_outshape(tf_shape(x_flatten), tf_shape(W), k, conv=False)
+    out_shape[0] = batch_size
+    strides=[1, k, k, 1]  
+    res = tf.nn.conv2d_transpose(x_flatten, W, output_shape=tf.stack(out_shape),
                                    strides=strides, padding='SAME')
+    return tf.reshape(res, out_shape)
 
 #-------------------------------------------------------------------------------
 #-------------------------------------------------------------------------------
 #-------------------------------------------------------------------------------
-def batch_norm(x, n_out, decay=0.99, scope="layer", epsilon=0.001, phase_train=False):
+def batch_norm(x, n_out, ema, scope="layer", epsilon=0.001, phase_train=False):
     """
     Batch normalization on raw layers or convolutional maps.
     Ref.: http://stackoverflow.com/questions/33949786/how-could-i-use-batch-normalization-in-tensorflow
     Args:
         x:           Tensor, 2D BL or 4D BHWD input maps
         n_out:       integer, depth of input maps
-        decay:       Float, the decay rate of the exp. moving avg
+        ema:         tf.train.ExponentialMovingAverage
         phase_train: tf.bool, true indicates training phase
     Return:
         normed:      batch-normalized maps
@@ -174,16 +179,17 @@ def batch_norm(x, n_out, decay=0.99, scope="layer", epsilon=0.001, phase_train=F
             
             batch_mean, batch_var = tf.nn.moments(x, range(len(shape)-1), name='moments')
             
-            ema = tf.train.ExponentialMovingAverage(decay=decay)
-    
             def mean_var_with_update():
                 ema_apply_op = ema.apply([batch_mean, batch_var])
                 with tf.control_dependencies([ema_apply_op]):
-                    return tf.identity(batch_mean), tf.identity(batch_var)
+                    curr_mean = ema.average(batch_mean)
+                    curr_var = ema.average(batch_var)
+                    return tf.identity(curr_mean),tf.identity(curr_var)
     
             mean, var = tf.cond(phase_train,
                                 mean_var_with_update,
                                 lambda: (ema.average(batch_mean), ema.average(batch_var)))
+            
             normed = tf.nn.batch_normalization(x, mean, var, beta, gamma, epsilon)
             
     return normed
@@ -227,7 +233,7 @@ class MLP(object):
         # control not given parameters 
         self.layers_lens = [ x if not np.isscalar(x) else [x] for x in self.layers_lens ]
         if self.strides is None :
-            self.strides = [ None for x in range(len(layers_lens) - 1)]   
+            self.strides = [ 1 for x in range(len(layers_lens) - 1)]   
         if self.convs is None :
             self.convs = [ None for x in range(len(layers_lens) - 1)]        
         if self.deconvs is None :
@@ -242,6 +248,7 @@ class MLP(object):
         # lists of network variables  
         self.weights = []
         self.biases = []
+        self.emas = []
         self.layers = []
         self.shapes = []
         
@@ -306,10 +313,15 @@ class MLP(object):
                             name="b", 
                             dtype=tf.float32, 
                             initializer=b_initial)
+                    # emas
+                    ema = None
+                    if has_batch_norm == True:
+                       ema = tf.train.ExponentialMovingAverage(decay=bn_decay)
                  
                     # store variables
                     self.weights.append(weight)
                     self.biases.append(bias)
+                    self.emas.append(ema)
        
     def update(self, inp, drop_out=None, phase_train=True): 
         """
@@ -331,17 +343,14 @@ class MLP(object):
         with tf.variable_scope(self.scope):
 
             self.layers.append(inp)
-            for curr_l0, (weight, bias, has_batch_norm,
-                          conv, deconv, copy_index, strides, 
-                          outfun) \
-                in enumerate(zip(self.weights, self.biases, self.batch_norms, 
-                                 self.convs, self.deconvs, self.copy_from, self.strides, 
-                                 self.outfuns)):
-                
-                
+            for curr_l0, (weight, bias, ema, has_batch_norm,
+                    conv, deconv, copy_index, strides, 
+                    outfun) \
+                            in enumerate(zip(self.weights, self.biases, self.emas, 
+                                self.batch_norms, self.convs, self.deconvs, 
+                                self.copy_from, self.strides, self.outfuns)):                
                 
                 scope = "layer-{:03d}".format(curr_l0)
-                print "{}_{} weights     {}".format(self.scope, curr_l0, tf_shape(weight))
 
                 # layer spreading graph
                 with tf.variable_scope(scope):
@@ -364,7 +373,7 @@ class MLP(object):
                         print "{}_{} deconv      YES".format(self.scope, curr_l0)
                         print "{}_{} dense       NO".format(self.scope, curr_l0)
                         output_layer = deconv2d(
-                            input_layer, weight,strides, deconv[-1]) 
+                            input_layer, weight, strides, deconv[-1]) 
                     else:    
                         print "{}_{} conv        NO".format(self.scope, curr_l0)
                         print "{}_{} deconv      NO".format(self.scope, curr_l0)
@@ -382,7 +391,7 @@ class MLP(object):
                         output_layer = batch_norm(
                             output_layer, 
                             n_out=tf_shape(output_layer)[-1],
-                            decay=self.bn_decay,
+                            ema=ema,
                             scope=scope, phase_train=phase_train)
                     elif has_batch_norm == False:   
                         # only bias  
@@ -399,8 +408,16 @@ class MLP(object):
                     else:
                         print "{}_{} dropout     NO".format(self.scope, curr_l0)
  
+                    def clear_batch_view(x):
+                        shape = tf_shape(x)
+                        shape = [i if type(i) == int else None for i in shape]
+                        return shape
+
+                    print "{}_{} input       {}".format(self.scope, curr_l0, clear_batch_view(input_layer))
+                    print "{}_{} weights     {}".format(self.scope, curr_l0, clear_batch_view(weight))
+                    print "{}_{} output      {}".format(self.scope, curr_l0, clear_batch_view(output_layer))
                     print
-                    
+
                     # store layer
                     self.layers.append(output_layer)
                                 

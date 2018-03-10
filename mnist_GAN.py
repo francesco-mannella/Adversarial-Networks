@@ -21,10 +21,12 @@ Generative adversarial network
 """
 
 #-------------------------------------------------------------------------------
+
 # only current needed GPU memory
 config = tf.ConfigProto()
 config.gpu_options.allow_growth = True
 #-------------------------------------------------------------------------------
+
 # set the seed for random numbers generation
 import os
 current_seed = np.frombuffer(os.urandom(4), dtype=np.uint32)[0]
@@ -35,21 +37,24 @@ tf.set_random_seed(current_seed)
 #-------------------------------------------------------------------------------
 #-------------------------------------------------------------------------------
 #-------------------------------------------------------------------------------
+
 # mnist
 from mnist_init_training_set import MNIST_manager
 mmanager = MNIST_manager()
 img_side, n_mnist_pixels, n_train = mmanager.get_params() 
 data, data_labels = mmanager.shuffle_imgs()
+
 #-------------------------------------------------------------------------------
 #-------------------------------------------------------------------------------
 #-------------------------------------------------------------------------------
+
 # plot
-import matplotlib.pyplot as plt
-plt.ion()
 from mnist_GAN_plot import Plotter
+
 #-------------------------------------------------------------------------------
 #-------------------------------------------------------------------------------
 #-------------------------------------------------------------------------------
+
 #Globals
 epochs = 300
 num_samples = 100
@@ -72,7 +77,7 @@ with graph.as_default():
     #  Generator
     generator_layers = [100, 256, 512, 1024, n_mnist_pixels]
     generator_dropouts = [True, True, True, False]
-    generator_outfuns =[tf.nn.relu, tf.nn.relu, tf.nn.relu, tf.nn.tanh] 
+    generator_outfuns =[tf.nn.relu, tf.nn.relu, tf.nn.relu, linear] 
     
     #---------------------------------------------------------------------------
     #  Disc:q:riminator
@@ -86,14 +91,16 @@ with graph.as_default():
     #---------------------------------------------------------------------------   
     #---------------------------------------------------------------------------   
     #---------------------------------------------------------------------------     
+
     # get Samples   
-    def get_latent_sample():
+    def get_latent_sample(num_samples=num_samples):
         return rng.randn(num_samples, generator_layers[0])
 
     def get_data_sample(iter):
         return np.vstack(data[iter*num_samples:(iter+1)*num_samples])
     
     fixed_latent_sample = get_latent_sample()
+
     #---------------------------------------------------------------------------   
     #---------------------------------------------------------------------------   
     #---------------------------------------------------------------------------   
@@ -116,8 +123,8 @@ with graph.as_default():
             for iter in range(len(data)//num_samples):
             
                 # discriminator step 
-                curr_discr_latent_sample = get_latent_sample()
-                curr_gen_latent_sample = get_latent_sample()
+                curr_discr_latent_sample = get_latent_sample(num_samples*10)
+                curr_gen_latent_sample = get_latent_sample(num_samples*10)
                 curr_data_sample = get_data_sample(iter)
                 
                 res = gan.train_step(session, curr_discr_latent_sample,

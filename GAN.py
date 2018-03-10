@@ -23,7 +23,7 @@ Generative adversarial network
 
 class GAN:
 
-    eps = 1e-10
+    eps = 1e-5
 
     def __init__(self, learning_rate,
             generator_layers, generator_dropouts, generator_outfuns, 
@@ -69,7 +69,8 @@ class GAN:
     
     def losses(self):
 
-        self.D_loss = tf.reduce_mean(tf.log(self.D_probs + self.eps) + tf.log(1.0 - self.G_probs + self.eps))  
+        self.D_loss = tf.reduce_mean(tf.log(self.D_probs + self.eps)) + \
+                tf.reduce_mean(tf.log(1.0 - self.G_probs + self.eps))  
         self.G_loss = tf.reduce_mean(tf.log(self.G_probs + self.eps))
 
     def train_step(self, session, curr_discr_latent_sample, 

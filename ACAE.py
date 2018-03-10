@@ -11,63 +11,77 @@ Adversarial autoencoder
 
 * A multilayered perceptron as the autoencoder network 
     takes samples for the mnist dataset and reproduces them
-    
-* A multilayered perceptron as the discriminator network - p = D(Z)
-    takes a sample form the hidden pattern space Z and gives a probability 
-    that the image belongs to a prior distribution Z_g
-    and not the encoder inner activities Z_d
-    
-
-    1) the autoencoder minimizes:
-        R_loss =  mean(sqrt( Y - X)**2))
-    2) the discriminator maximizes:
-        D_loss = log(D(Z_d)) + log(1 - D(Z_p) 
-    the encoder part of the autoencoder maximizes:
-        G_loss = log( D(Z_p) 
 """
 #---------------------------------------------------------------------------  
 #---------------------------------------------------------------------------  
 #---------------------------------------------------------------------------  
 class AAE:
 
-    eps = 1.0e-5
+    eps = 1.0e-10
 
-    def __init__(self, 
-            rlr, alr, weight_scale,
+    def __init__(self, rlr, alr, weight_scale,
             encoder_outfuns, encoder_layers,
             decoder_outfuns, decoder_layers,
-            adversarial_outfuns, adversarial_layers):
-        
+            adversarial_outfuns, adversarial_layers,
+            encoder_dropouts=None, decoder_dropouts=None,
+            adversarial_dropouts=None, encoder_bn=None,
+            decoder_bn=None, adversarial_bn=None,
+            bn_decay=None, encoder_convs=None,
+            decoder_convs=None, adversarial_convs=None,
+            encoder_deconvs=None, decoder_deconvs=None,
+            adversarial_deconvs=None, encoder_strides=None,
+            decoder_strides=None, adversarial_strides=None,
+            encoder_copy_from=None, decoder_copy_from=None,
+            adversarial_copy_from=None):
 
         self.rlr = rlr
         self.alr = alr
         self.encoder_layers = encoder_layers
         self.decoder_layers = decoder_layers
-
+        
+        if bn_decay is None: bn_decay = 0.99
 
         self.encoder = MLP(scope="Encoder", 
                 weight_scale=weight_scale,
+                bn_decay=bn_decay,
                 outfuns=encoder_outfuns, 
-                layers_lens=encoder_layers)   
+                layers_lens=encoder_layers,
+                drop_out=encoder_dropouts,
+                convs=encoder_convs, 
+                deconvs=encoder_deconvs, 
+                strides=encoder_strides, 
+                batch_norms=encoder_bn)   
 
         self.decoder = MLP(scope="Decoder",
                 weight_scale=weight_scale,
+                bn_decay=bn_decay,
                 outfuns=decoder_outfuns, 
-                layers_lens=decoder_layers)    
+                layers_lens=decoder_layers,        
+                drop_out=decoder_dropouts,
+                convs=decoder_convs, 
+                deconvs=decoder_deconvs, 
+                strides=decoder_strides, 
+                batch_norms=decoder_bn)    
 
         self.adversarial = MLP(scope="Adversarial",
                 weight_scale=weight_scale,
+                bn_decay=bn_decay,
                 outfuns=adversarial_outfuns,
-                layers_lens=adversarial_layers)   
+                layers_lens=adversarial_layers,  
+                drop_out=adversarial_dropouts,
+                convs=adversarial_convs, 
+                deconvs=adversarial_deconvs, 
+                strides=adversarial_strides, 
+                batch_norms=adversarial_bn)   
 
         self.make_graph()
 
     def make_graph(self):
     
         self.data_sample = tf.placeholder(tf.float32, 
-                [None, self.encoder_layers[0]])
+                [None] + self.encoder_layers[0])
         self.prior_sample = tf.placeholder(tf.float32, 
-                [None, self.decoder_layers[0]])
+                [None] + self.decoder_layers[0])
         self.drop_out = tf.placeholder(tf.float32, ())
         self.phase_train = tf.placeholder(tf.bool, ())
         
@@ -140,9 +154,8 @@ class AAE:
                 self.phase_train: False})
         # Current activation of hidden units in response to the 
         #   presentation of data images
-        curr_hidden_patterns = session.run(self.hidden_patterns, 
+        curr_hidden_patterns, curr_decoded_patterns = session.run(
+                [self.hidden_patterns, self.decoded_patterns], 
             feed_dict={self.data_sample:test_data, self.drop_out: 1.0, 
                 self.phase_train: False})
-
-        return grid_patterns, curr_hidden_patterns
-
+        return grid_patterns, curr_hidden_patterns, curr_decoded_patterns
