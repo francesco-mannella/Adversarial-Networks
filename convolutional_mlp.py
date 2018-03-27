@@ -153,7 +153,8 @@ def deconv2d(x, W, k=1, inp_layers=1):
 #-------------------------------------------------------------------------------
 #-------------------------------------------------------------------------------
 #-------------------------------------------------------------------------------
-def batch_norm(x, n_out, ema, scope="layer", epsilon=0.001, phase_train=False):
+def batch_norm(x, n_out, ema,  epsilon=0.001, 
+        phase_train=tf.constant(True)):
     """
     Batch normalization on raw layers or convolutional maps.
     Ref.: http://stackoverflow.com/questions/33949786/how-could-i-use-batch-normalization-in-tensorflow
@@ -168,30 +169,28 @@ def batch_norm(x, n_out, ema, scope="layer", epsilon=0.001, phase_train=False):
     shape = tf_shape(x)
     batch_mean, batch_var = tf.nn.moments(x, range(len(shape)-1))
     
-    with tf.variable_scope(scope):
+    with tf.variable_scope("bn"):
+        
+        beta = tf.Variable(tf.constant(0.0, shape=[n_out]),
+                                        name='beta', trainable=True)
+        gamma = tf.Variable(tf.constant(1.0, shape=[n_out]),
+                                        name='gamma', trainable=True)
+        
+        batch_mean, batch_var = tf.nn.moments(x, range(len(shape)-1), name='moments')
+        
+        def mean_var_with_update():
+            ema_apply_op = ema.apply([batch_mean, batch_var])
+            with tf.control_dependencies([ema_apply_op]):
+                curr_mean = ema.average(batch_mean)
+                curr_var = ema.average(batch_var)
+                return tf.identity(curr_mean),tf.identity(curr_var)
 
-        with tf.variable_scope("bn"):
-            
-            beta = tf.Variable(tf.constant(0.0, shape=[n_out]),
-                                         name='beta', trainable=True)
-            gamma = tf.Variable(tf.constant(1.0, shape=[n_out]),
-                                          name='gamma', trainable=True)
-            
-            batch_mean, batch_var = tf.nn.moments(x, range(len(shape)-1), name='moments')
-            
-            def mean_var_with_update():
-                ema_apply_op = ema.apply([batch_mean, batch_var])
-                with tf.control_dependencies([ema_apply_op]):
-                    curr_mean = ema.average(batch_mean)
-                    curr_var = ema.average(batch_var)
-                    return tf.identity(curr_mean),tf.identity(curr_var)
-    
-            mean, var = tf.cond(phase_train,
-                                mean_var_with_update,
-                                lambda: (ema.average(batch_mean), ema.average(batch_var)))
-            
-            normed = tf.nn.batch_normalization(x, mean, var, beta, gamma, epsilon)
-            
+        mean, var = tf.cond(phase_train,
+                            mean_var_with_update,
+                            lambda: (ema.average(batch_mean), ema.average(batch_var)))
+        
+        normed = tf.nn.batch_normalization(x, mean, var, beta, gamma, epsilon)
+        
     return normed
 #-------------------------------------------------------------------------------
 #-------------------------------------------------------------------------------
@@ -325,7 +324,7 @@ class MLP(object):
                     self.biases.append(bias)
                     self.emas.append(ema)
        
-    def update(self, inp, drop_out=None, phase_train=True): 
+    def update(self, inp, drop_out=None, phase_train=tf.constant(True)): 
         """
         Spreading of activations throughout the layers of the MLP objects
         Args:
@@ -394,7 +393,7 @@ class MLP(object):
                             output_layer, 
                             n_out=tf_shape(output_layer)[-1],
                             ema=ema,
-                            scope=scope, phase_train=phase_train)
+                            phase_train=phase_train)
                     elif has_batch_norm == False:   
                         # only bias  
                         print "{}_{} batch_norm  NO".format(self.scope, curr_l0)
