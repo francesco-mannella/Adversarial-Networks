@@ -142,11 +142,11 @@ def deconv2d(x, W, k=1, inp_layers=1):
         a tensor
     """ 
     batch_size = tf.shape(x)[0]
-    x_flatten = unflatten(x, inp_layers)
-    out_shape = get_outshape(tf_shape(x_flatten), tf_shape(W), k, conv=False)
+    x_unflatten = unflatten(x, inp_layers)
+    out_shape = get_outshape(tf_shape(x_unflatten), tf_shape(W), k, conv=False)
     out_shape[0] = batch_size
     strides=[1, k, k, 1]  
-    res = tf.nn.conv2d_transpose(x_flatten, W, output_shape=tf.stack(out_shape),
+    res = tf.nn.conv2d_transpose(x_unflatten, W, output_shape=tf.stack(out_shape),
                                    strides=strides, padding='SAME')
     return tf.reshape(res, out_shape)
 
@@ -293,6 +293,8 @@ class MLP(object):
                         b_shape = [1, out_shape[1]]
             
                     # weight and bias initializers
+                    print w_shape
+                    print weight_scale
                     w_initial = tf.truncated_normal(w_shape, stddev=weight_scale)
                     b_initial = tf.constant(0.0, shape=b_shape)
                     

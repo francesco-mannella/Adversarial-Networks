@@ -25,9 +25,13 @@ class GAN:
 
     eps = 1e-5
 
-    def __init__(self, learning_rate,
+    def __init__(self, learning_rate, 
             generator_layers, generator_dropouts, generator_outfuns, 
-            discriminator_layers, discriminator_dropouts, discriminator_outfuns):
+            discriminator_layers, discriminator_dropouts, discriminator_outfuns,
+            generator_bn=None, generator_convs=None, generator_deconvs=None, generator_strides=None,
+            discriminator_bn=None, discriminator_convs=None, discriminator_deconvs=None, discriminator_strides=None,
+            generator_weight_scale=0.02, discriminator_weight_scale=0.02,
+            generator_bn_decay=0.5, discriminator_bn_decay=0.5):
         
         self.generator_layers = generator_layers
         self.discriminator_layers = discriminator_layers
@@ -36,15 +40,27 @@ class GAN:
         
         self.generator = MLP(scope="Generator", 
                 lr=learning_rate,
+                weight_scale=generator_weight_scale,
+                bn_decay=generator_bn_decay,
                 drop_out=generator_dropouts,
                 outfuns=generator_outfuns, 
-                layers_lens=generator_layers) 
+                layers_lens=generator_layers,
+                convs=generator_convs,
+                deconvs=generator_deconvs,
+                batch_norms=generator_bn,
+                strides=generator_strides) 
 
         self.discriminator = MLP(scope="Discriminator", 
-                        lr=learning_rate, 
-                        drop_out=discriminator_dropouts,
-                        outfuns=discriminator_outfuns,
-                        layers_lens=discriminator_layers)
+                lr=learning_rate, 
+                weight_scale=discriminator_weight_scale,
+                bn_decay=discriminator_bn_decay,
+                drop_out=discriminator_dropouts,
+                outfuns=discriminator_outfuns, 
+                layers_lens=discriminator_layers,
+                convs=discriminator_convs,
+                deconvs=discriminator_deconvs,
+                batch_norms=discriminator_bn,
+                strides=discriminator_strides) 
 
         self.make_graph()
 
@@ -52,8 +68,12 @@ class GAN:
         
         # spread graph
         # placeholders
-        self.latent_sample = tf.placeholder(tf.float32, (None, self.generator_layers[0]))
-        self.data_sample = tf.placeholder(tf.float32, (None, self.discriminator_layers[0]))
+        glayer = self.generator_layers[0] 
+        glayer = glayer if isinstance(glayer, (list, tuple)) else [glayer]
+        self.latent_sample = tf.placeholder(tf.float32, [None] + glayer)
+        dlayer = self.discriminator_layers[0] 
+        dlayer = dlayer if isinstance(dlayer, (list, tuple)) else [dlayer]
+        self.data_sample = tf.placeholder(tf.float32, [None] + dlayer)
         self.curr_generator_dropout = tf.placeholder(tf.float32, ())
         self.curr_discriminator_dropout = tf.placeholder(tf.float32, ())
         # graph branches
